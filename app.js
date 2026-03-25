@@ -140,11 +140,16 @@ function showGpsError(message) {
 }
 
 function onPositionError(err) {
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const denied = isIOS
+    ? 'Location denied. To fix: Settings → Privacy → Location Services → Safari → While Using'
+    : 'Location denied. Allow access in your browser site settings.';
   const messages = {
-    1: 'GPS permission denied. Please allow location access.',
+    1: denied,
     2: 'GPS position unavailable.',
-    3: 'GPS timed out.',
+    3: 'GPS timed out — try again outdoors.',
   };
+  document.getElementById('locate-btn').style.display = 'block';
   showGpsError(messages[err.code] || `GPS error: ${err.message}`);
 }
 
