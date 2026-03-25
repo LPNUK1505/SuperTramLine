@@ -1,4 +1,4 @@
-const CACHE_NAME = 'supertramline-939b85ad651d20fee03ad0893b6d4726e4df2829';
+const CACHE_NAME = 'supertramline-9ec2ca16ac91a181ca648b0caff47ea5f85872b4';
 
 // Activate immediately, don't wait for existing tabs to close.
 // Trade-off: a new version can activate mid-session. Acceptable here because
