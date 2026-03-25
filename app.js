@@ -234,6 +234,9 @@ searchInput.addEventListener('input', () => {
       selectedStop = stop;
       lockedRoute = null;
       updateTravelInfo();
+      // Close sidebar on mobile after selecting a stop
+      document.getElementById('top-bar').classList.remove('open');
+      document.getElementById('sidebar-backdrop').classList.remove('visible');
     });
     searchResults.appendChild(li);
   });
@@ -308,6 +311,20 @@ document.getElementById('locate-btn').addEventListener('click', () => {
   } else {
     showGpsError('Geolocation not supported on this device.');
   }
+});
+
+// --- Mobile sidebar ---
+const menuBtn = document.getElementById('menu-btn');
+const topBar  = document.getElementById('top-bar');
+const backdrop = document.getElementById('sidebar-backdrop');
+
+menuBtn.addEventListener('click', () => {
+  topBar.classList.toggle('open');
+  backdrop.classList.toggle('visible');
+});
+backdrop.addEventListener('click', () => {
+  topBar.classList.remove('open');
+  backdrop.classList.remove('visible');
 });
 
 // --- Travel distance / time along route ---
