@@ -149,12 +149,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   display: none;
 }
 
-/* ── Locate Me button ── */
-#locate-btn {
-  position: fixed;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  right: 20px;
-  z-index: 1000;
+/* ── Locate Me / Re-centre shared appearance ── */
+#locate-btn,
+#recenter-btn {
   padding: 12px 18px;
   min-height: 44px;
   background: rgba(255, 255, 255, 0.95);
@@ -166,6 +163,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   font-weight: 500;
   color: #333;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Re-centre: always fixed bottom-right, hidden until user pans */
+#recenter-btn {
+  display: none;
+  position: fixed;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  right: 20px;
+  z-index: 1000;
+  align-items: center;
+}
+
+/* Locate Me: fixed bottom-right on desktop only */
+@media (min-width: 641px) {
+  #locate-btn {
+    position: fixed;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    right: 20px;
+    z-index: 1000;
+  }
 }
 
 /* ── Travel info pill ── */
@@ -345,5 +362,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     width: 100%;
     text-align: center;
     justify-content: center;
+  }
+
+  /* Locate Me flows in sidebar on mobile */
+  #locate-btn {
+    width: 100%;
   }
 }

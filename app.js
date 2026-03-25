@@ -6,16 +6,21 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
 
-// Route config — colours match the official Supertram line colours
+// Route config
 const routes = [
-  { file: 'routes/blue.geojson',      colour: '#0074D9', name: 'Blue',       ref: 'BLUE' },
-  { file: 'routes/yellow.geojson',     colour: '#FFD700', name: 'Yellow',     ref: 'YELL' },
-  { file: 'routes/purple.geojson',     colour: '#8B008B', name: 'Purple',     ref: 'PURP' },
-  { file: 'routes/tram-train.geojson', colour: '#333333', name: 'Tram Train', ref: 'TT'   },
+  { file: 'routes/blue.geojson',      colour: '#0057E7', name: 'Blue',       ref: 'BLUE' },
+  { file: 'routes/yellow.geojson',     colour: '#FFB800', name: 'Yellow',     ref: 'YELL' },
+  { file: 'routes/purple.geojson',     colour: '#9500D3', name: 'Purple',     ref: 'PURP' },
+  { file: 'routes/tram-train.geojson', colour: '#3D3D3D', name: 'Tram Train', ref: 'TT'   },
 ];
+
+// Panes ensure all halos render beneath all route lines, regardless of async load order
+map.createPane('haloPane').style.zIndex  = 300;
+map.createPane('routePane').style.zIndex = 301;
 
 // Load and store each route layer
 const routeLayers = {};
+const routeHaloLayers = {};
 const routeGeojsons = {};
 const stopLayers = {};
 let activeRoute = null;
@@ -23,19 +28,24 @@ let activeRoute = null;
 // Travel-info state
 let userLatLng = null;
 let selectedStop = null;
-let lockedRoute = null; // route name once user has clearly diverged onto one line
-const PESSIMISTIC_KMH = 15; // km/h — tune this to adjust time estimates
+let lockedRoute = null;     // route name once user has clearly diverged onto one line
+let prevSnapIndex = null;   // previous segment index on the route, for direction detection
+let travelDirection = 0;    // 1 = forward along route coords, -1 = backward, 0 = unknown
+const routeStopIndexCache = {}; // routeName → [{name, snapIndex}] sorted — built lazily
+const PESSIMISTIC_KMH = 18; // km/h — ~14% above timetabled speed of ~20.6 km/h
 const NOT_ON_ROUTE_KM = 0.15;  // 150 m from line → "not on route"
 const LOCK_THRESHOLD_KM = 0.04; // 40 m gap between nearest and 2nd-nearest → lock
 
 const showAll = () => {
   routes.forEach(r => {
+    routeHaloLayers[r.name]?.addTo(map);
     routeLayers[r.name]?.addTo(map);
     stopLayers[r.name]?.addTo(map);
   });
 };
 const hideAll = () => {
   routes.forEach(r => {
+    routeHaloLayers[r.name]?.remove();
     routeLayers[r.name]?.remove();
     stopLayers[r.name]?.remove();
   });
@@ -46,8 +56,11 @@ routes.forEach(route => {
     .then(r => r.json())
     .then(geojson => {
       routeGeojsons[route.name] = geojson;
+      routeHaloLayers[route.name] = L.geoJSON(geojson, {
+        style: { color: '#ffffff', weight: 12, opacity: 0.9, pane: 'haloPane', lineCap: 'round', lineJoin: 'round' }
+      }).addTo(map);
       routeLayers[route.name] = L.geoJSON(geojson, {
-        style: { color: route.colour, weight: 4, opacity: 0.8 }
+        style: { color: route.colour, weight: 7, opacity: 1, pane: 'routePane', lineCap: 'round', lineJoin: 'round' }
       }).addTo(map);
     })
     .catch(err => console.error(`Failed to load ${route.name}:`, err));
@@ -66,30 +79,50 @@ document.querySelectorAll('#buttons button').forEach(btn => {
       btn.classList.add('active');
       activeRoute = name;
       hideAll();
+      routeHaloLayers[name]?.addTo(map);
       routeLayers[name]?.addTo(map);
       stopLayers[name]?.addTo(map);
     }
     lockedRoute = null;
+    prevSnapIndex = null;
+    travelDirection = 0;
     updateTravelInfo();
   });
 });
 
-// Stop marker helper
-const makeStopLayer = (features) => L.geoJSON({ type: 'FeatureCollection', features }, {
+// Unnamed stop marker layer — used for the initial fast render from stops.geojson.
+// Replaced by buildNamedStopLayer once Overpass names are available.
+const makeStopLayer = (features, routeColour) => L.geoJSON({ type: 'FeatureCollection', features }, {
   pointToLayer: (_feature, latlng) => L.circleMarker(latlng, {
-    radius: 4,
-    fillColor: '#fff',
-    color: '#333',
-    weight: 1.5,
+    radius: 6,
+    fillColor: '#ffffff',
+    color: routeColour,
+    weight: 3,
     fillOpacity: 1
-  }),
-  onEachFeature: (feature, layer) => {
-    const name = feature.properties.name
-      || feature.properties['@relations']?.[0]?.reltags?.name
-      || 'Tram Stop';
-    layer.bindTooltip(name, { direction: 'top', offset: [0, -6] });
-  }
+  })
 });
+
+// Named stop layer — built from allStops so tooltips show the real stop name.
+// Tooltip shows on hover (desktop) and tap (mobile).
+const buildNamedStopLayer = (stopsOnRoute, routeColour) => {
+  const group = L.layerGroup();
+  stopsOnRoute.forEach(stop => {
+    const marker = L.circleMarker(stop.latlng, {
+      radius: 6,
+      fillColor: '#ffffff',
+      color: routeColour,
+      weight: 3,
+      fillOpacity: 1
+    });
+    marker.bindTooltip(stop.name, { direction: 'auto', sticky: false });
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      marker.isTooltipOpen() ? marker.closeTooltip() : marker.openTooltip();
+    });
+    group.addLayer(marker);
+  });
+  return group;
+};
 
 // Load stops and split into per-route layers
 fetch('routes/stops.geojson')
@@ -112,7 +145,7 @@ fetch('routes/stops.geojson')
     });
 
     routes.forEach(route => {
-      stopLayers[route.name] = makeStopLayer(buckets[route.name]).addTo(map);
+      stopLayers[route.name] = makeStopLayer(buckets[route.name], route.colour).addTo(map);
     });
 
     // Build coordinate→route map for proximity matching below.
@@ -129,7 +162,7 @@ fetch('routes/stops.geojson')
     });
 
     // Fetch named tram_stop nodes — cached in localStorage to avoid Overpass rate limits.
-    const CACHE_KEY = 'supertram_stops_v1';
+    const CACHE_KEY = 'supertram_stops_v2';
     const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
 
     const populateStops = (elements) => {
@@ -150,6 +183,16 @@ fetch('routes/stops.geojson')
         allStops.push({ name, latlng: [el.lat, el.lon], routes: bestRoutes });
       });
       allStops.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Replace the unnamed initial stop layers with properly named interactive ones
+      routes.forEach(route => {
+        stopLayers[route.name]?.remove();
+        const stopsOnRoute = allStops.filter(s => s.routes.some(r => r.name === route.name));
+        stopLayers[route.name] = buildNamedStopLayer(stopsOnRoute, route.colour);
+        if (activeRoute === null || activeRoute === route.name) {
+          stopLayers[route.name].addTo(map);
+        }
+      });
     };
 
     try {
@@ -165,7 +208,7 @@ fetch('routes/stops.geojson')
 
     fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
-      body: '[out:json];node["railway"="tram_stop"](53.30,-1.60,53.50,-1.35);out body;'
+      body: '[out:json];node["railway"="tram_stop"](53.28,-1.62,53.52,-1.32);out body;'
     })
       .then(r => r.json())
       .then(data => {
@@ -233,6 +276,8 @@ searchInput.addEventListener('input', () => {
       hideResults();
       selectedStop = stop;
       lockedRoute = null;
+      prevSnapIndex = null;
+      travelDirection = 0;
       updateTravelInfo();
       // Close sidebar on mobile after selecting a stop
       document.getElementById('top-bar').classList.remove('open');
@@ -275,6 +320,7 @@ function onPositionUpdate(pos) {
     map.setView(latlng, 15);
     firstFix = false;
   }
+  updateRecenterBtn();
   updateTravelInfo();
 }
 
@@ -327,23 +373,55 @@ backdrop.addEventListener('click', () => {
   backdrop.classList.remove('visible');
 });
 
+// --- Re-centre button ---
+const recenterBtn = document.getElementById('recenter-btn');
+
+function updateRecenterBtn() {
+  if (!userLatLng) { recenterBtn.style.display = 'none'; return; }
+  const d = map.distance(map.getCenter(), L.latLng(userLatLng[0], userLatLng[1]));
+  recenterBtn.style.display = d > 150 ? 'flex' : 'none';
+}
+
+map.on('moveend', updateRecenterBtn);
+
+recenterBtn.addEventListener('click', () => {
+  map.setView(userLatLng, Math.max(map.getZoom(), 15));
+});
+
+// --- Next stop detection ---
+// Builds a sorted list of {name, snapIndex} for stops on a given route.
+// Computed once per route and cached — allStops must be populated first.
+function getStopIndexOnRoute(routeName, lineFeature) {
+  if (routeStopIndexCache[routeName]) return routeStopIndexCache[routeName];
+  if (!allStops.length) return null;
+
+  const result = allStops
+    .filter(s => s.routes.some(r => r.name === routeName))
+    .map(stop => {
+      const pt = turf.point([stop.latlng[1], stop.latlng[0]]);
+      const snapped = turf.nearestPointOnLine(lineFeature, pt);
+      return { name: stop.name, snapIndex: snapped.properties.index };
+    })
+    .sort((a, b) => a.snapIndex - b.snapIndex);
+
+  if (result.length) routeStopIndexCache[routeName] = result;
+  return result.length ? result : null;
+}
+
 // --- Travel distance / time along route ---
 function updateTravelInfo() {
   const el = document.getElementById('travel-info');
 
-  if (!userLatLng || !selectedStop) {
-    el.style.display = 'none';
-    return;
-  }
+  if (!userLatLng) { el.style.display = 'none'; return; }
 
-  // If the user manually selected a route, restrict to that; otherwise all routes for this stop
-  const candidates = activeRoute
-    ? selectedStop.routes.filter(r => r.name === activeRoute)
-    : selectedStop.routes;
+  // Candidate routes: use destination's routes if selected, otherwise all routes
+  const candidateRoutes = selectedStop
+    ? (activeRoute ? selectedStop.routes.filter(r => r.name === activeRoute) : selectedStop.routes)
+    : (activeRoute ? routes.filter(r => r.name === activeRoute) : routes);
 
   // Snap user to every candidate line and sort by distance
   const userPt = turf.point([userLatLng[1], userLatLng[0]]);
-  const snaps = candidates
+  const snaps = candidateRoutes
     .map(route => {
       const geojson = routeGeojsons[route.name];
       if (!geojson) return null;
@@ -360,13 +438,37 @@ function updateTravelInfo() {
   // Route selection: honour existing lock, or pick nearest and lock if clearly diverged
   let chosen = lockedRoute ? snaps.find(s => s.route.name === lockedRoute) : null;
   if (!chosen) {
-    // Lock is absent or the locked route is no longer a candidate — pick nearest
     lockedRoute = null;
     chosen = snaps[0];
-    // Only lock once the gap to the next line is meaningful (avoids locking in city centre)
     if (snaps.length > 1 && (snaps[1].dist - snaps[0].dist) > LOCK_THRESHOLD_KM) {
       lockedRoute = chosen.route.name;
     }
+  }
+
+  // Direction tracking: compare current segment index to previous
+  const currentIndex = chosen.snapped.properties.index;
+  if (prevSnapIndex !== null && currentIndex !== prevSnapIndex) {
+    travelDirection = currentIndex > prevSnapIndex ? 1 : -1;
+  }
+  prevSnapIndex = currentIndex;
+
+  // Find next stop in direction of travel
+  let nextStopName = null;
+  if (travelDirection !== 0) {
+    const stopIndices = getStopIndexOnRoute(chosen.route.name, chosen.lineFeature);
+    if (stopIndices) {
+      if (travelDirection === 1) {
+        nextStopName = stopIndices.find(s => s.snapIndex > currentIndex)?.name ?? null;
+      } else {
+        nextStopName = [...stopIndices].reverse().find(s => s.snapIndex < currentIndex)?.name ?? null;
+      }
+    }
+  }
+
+  // Nothing useful to show if off-route and no destination was set
+  if (chosen.dist > NOT_ON_ROUTE_KM && !selectedStop && !nextStopName) {
+    el.style.display = 'none';
+    return;
   }
 
   el.innerHTML = '';
@@ -375,18 +477,23 @@ function updateTravelInfo() {
   dot.style.background = chosen.route.colour;
   el.appendChild(dot);
 
-  const text = document.createElement('span');
+  const parts = [];
   if (chosen.dist > NOT_ON_ROUTE_KM) {
-    text.textContent = 'Not on route';
-  } else {
+    parts.push('Not on route');
+  } else if (selectedStop) {
     const destPt = turf.point([selectedStop.latlng[1], selectedStop.latlng[0]]);
     const snappedDest = turf.nearestPointOnLine(chosen.lineFeature, destPt);
     const segment = turf.lineSlice(chosen.snapped, snappedDest, chosen.lineFeature);
     const distKm = turf.length(segment, { units: 'kilometers' });
     const timeMin = Math.ceil((distKm / PESSIMISTIC_KMH) * 60);
-    text.textContent = `${distKm.toFixed(1)} km until destination · ~${timeMin} min`;
+    parts.push(`${distKm.toFixed(1)} km · ~${timeMin} min`);
   }
+  if (nextStopName) parts.push(`→ ${nextStopName}`);
 
+  if (!parts.length) { el.style.display = 'none'; return; }
+
+  const text = document.createElement('span');
+  text.textContent = parts.join(' · ');
   el.appendChild(text);
   el.style.display = 'flex';
 }
