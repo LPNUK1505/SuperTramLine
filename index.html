@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SuperTramLine</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    #map { height: 100vh; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
+  <script>
+    // Initialise map centred on Sheffield
+    const map = L.map('map').setView([53.38, -1.47], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Route config — colours match the official Supertram line colours
+    const routes = [
+      { file: 'routes/blue.geojson',      colour: '#0074D9', name: 'Blue' },
+      { file: 'routes/yellow.geojson',     colour: '#FFD700', name: 'Yellow' },
+      { file: 'routes/purple.geojson',     colour: '#8B008B', name: 'Purple' },
+      { file: 'routes/tram-train.geojson', colour: '#333333', name: 'Tram Train' },
+    ];
+
+    // Load and display each route
+    routes.forEach(route => {
+      fetch(route.file)
+        .then(r => r.json())
+        .then(geojson => {
+          L.geoJSON(geojson, {
+            style: {
+              color: route.colour,
+              weight: 4,
+              opacity: 0.8
+            }
+          }).addTo(map);
+        })
+        .catch(err => console.error(`Failed to load ${route.name}:`, err));
+    });
+
+    // Load and display tram stops
+    fetch('routes/stops.geojson')
+      .then(r => r.json())
+      .then(geojson => {
+        L.geoJSON(geojson, {
+          pointToLayer: (feature, latlng) => {
+            return L.circleMarker(latlng, {
+              radius: 4,
+              fillColor: '#fff',
+              color: '#333',
+              weight: 1.5,
+              fillOpacity: 1
+            });
+          },
+          onEachFeature: (feature, layer) => {
+            const name = feature.properties.name
+              || feature.properties['@relations']?.[0]?.reltags?.name
+              || 'Tram Stop';
+            layer.bindTooltip(name, { direction: 'top', offset: [0, -6] });
+          }
+        }).addTo(map);
+      })
+      .catch(err => console.error('Failed to load stops:', err));
+  </script>
+</body>
+</html>
