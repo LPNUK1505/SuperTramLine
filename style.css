@@ -227,6 +227,23 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   text-align: center;
 }
 
+/* ── Debug panel (shared base) ── */
+#debug-panel-mobile {
+  display: none; /* shown only on mobile via media query */
+  position: fixed;
+  bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  max-width: calc(100vw - 40px);
+  background: rgba(255, 220, 0, 0.95);
+  border: 1px solid rgba(180, 140, 0, 0.4);
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 /* ── Debug panel ── */
 #debug-panel {
   position: fixed;
@@ -447,8 +464,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     width: 100%;
   }
 
-  /* Debug is desktop-only */
-  #debug-btn {
-    display: none;
+  /* Full debug panel and inspector are desktop-only */
+  #debug-panel,
+  #debug-inspector {
+    display: none !important;
+  }
+
+  /* Simple mobile debug panel */
+  #debug-panel-mobile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    flex-wrap: wrap;
   }
 }

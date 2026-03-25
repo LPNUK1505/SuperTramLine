@@ -4,11 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SuperTramLine — Debug</title>
-  <script>
-    if (window.matchMedia('(max-width: 640px)').matches) {
-      window.location.replace('index.html');
-    }
-  </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css">
 </head>
@@ -31,6 +26,17 @@
       <ul id="search-results"></ul>
     </div>
     <button id="locate-btn">&#x25CE; Locate Me</button>
+  </div>
+
+  <div id="debug-panel-mobile">
+    <span id="debug-label">Debug</span>
+    <select id="debug-route-mobile">
+      <option value="Blue">Blue Route</option>
+      <option value="Yellow">Yellow Route</option>
+      <option value="Purple">Purple Route</option>
+      <option value="Tram Train">Tram Train</option>
+    </select>
+    <button id="debug-start-mobile">▶ Start</button>
   </div>
 
   <div id="debug-panel">
@@ -163,6 +169,41 @@
         startBtn.classList.add('active');
       };
 
+      if (mockCachedGeoJSON) {
+        run(mockCachedGeoJSON);
+      } else {
+        fetch(route.file).then(r => r.json()).then(run);
+      }
+    });
+
+    // Mobile debug panel — simple route select + start/stop, always fwd from km 0
+    const mobileStartBtn = document.getElementById('debug-start-mobile');
+    document.getElementById('debug-route-mobile').addEventListener('change', () => {
+      mockStartKm = null;
+      mockCachedGeoJSON = null;
+    });
+    mobileStartBtn.addEventListener('click', () => {
+      if (mockSim) {
+        mockStartKm = mockSim.getDistKm();
+        clearInterval(mockSim.id);
+        mockSim = null;
+        mobileStartBtn.textContent = '▶ Start';
+        mobileStartBtn.classList.remove('active');
+        startBtn.textContent = '▶ Start';
+        startBtn.classList.remove('active');
+        return;
+      }
+      const routeName = document.getElementById('debug-route-mobile').value;
+      const route = routes.find(r => r.name === routeName);
+      if (!route) return;
+      const run = (geojson) => {
+        mockCachedGeoJSON = geojson;
+        mockSim = startMockGPS(geojson, 25, null, () => 1);
+        mobileStartBtn.textContent = '■ Stop';
+        mobileStartBtn.classList.add('active');
+        startBtn.textContent = '■ Stop';
+        startBtn.classList.add('active');
+      };
       if (mockCachedGeoJSON) {
         run(mockCachedGeoJSON);
       } else {
