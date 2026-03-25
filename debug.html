@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SuperTramLine — Debug</title>
+  <script>
+    if (window.matchMedia('(max-width: 640px)').matches) {
+      window.location.replace('index.html');
+    }
+  </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css">
 </head>
@@ -27,16 +32,38 @@
     </div>
     <button id="locate-btn">&#x25CE; Locate Me</button>
   </div>
+
   <div id="debug-panel">
-    <span id="debug-label">Debug Mode</span>
-    <select id="debug-route-select">
-      <option value="Blue">Blue Route</option>
-      <option value="Yellow">Yellow Route</option>
-      <option value="Purple">Purple Route</option>
-      <option value="Tram Train">Tram Train</option>
-    </select>
-    <button id="debug-start-btn">Start Mock GPS</button>
+    <div class="debug-row">
+      <span id="debug-label">Debug</span>
+      <select id="debug-route-select">
+        <option value="Blue">Blue</option>
+        <option value="Yellow">Yellow</option>
+        <option value="Purple">Purple</option>
+        <option value="Tram Train">Tram Train</option>
+      </select>
+      <button id="debug-dir-btn">→ Fwd</button>
+      <button id="debug-start-btn">▶ Start</button>
+    </div>
+    <div class="debug-row">
+      <label for="debug-speed-slider" style="color:#5a3e00;font-size:0.85rem;flex-shrink:0">Speed</label>
+      <input type="range" id="debug-speed-slider" min="5" max="80" value="25" step="5">
+      <span id="debug-speed-val">25 km/h</span>
+    </div>
+    <div class="debug-row">
+      <span id="debug-start-info">Click map to set start position</span>
+      <span id="debug-start-km">—</span>
+    </div>
   </div>
+
+  <div id="debug-inspector">
+    <div class="inspector-row"><span class="inspector-key">Route</span><span class="inspector-val" id="ins-route">—</span></div>
+    <div class="inspector-row"><span class="inspector-key">Direction</span><span class="inspector-val" id="ins-dir">?</span></div>
+    <div class="inspector-row"><span class="inspector-key">Snap idx</span><span class="inspector-val" id="ins-idx">—</span></div>
+    <div class="inspector-row"><span class="inspector-key">Position</span><span class="inspector-val" id="ins-pos">—</span></div>
+    <div class="inspector-row"><span class="inspector-key">Dest</span><span class="inspector-val" id="ins-dest">—</span></div>
+  </div>
+
   <div id="travel-info"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -44,15 +71,81 @@
   <script src="app.js"></script>
   <script src="debug/mock-gps.js"></script>
   <script>
-    let mockInterval = null;
+    let mockSim = null;
+    let mockDirection = 1;
+    let mockStartKm = null;
+    let mockCachedGeoJSON = null;
+    let startMarker = null;
 
-    document.getElementById('debug-start-btn').addEventListener('click', () => {
-      const btn = document.getElementById('debug-start-btn');
-      if (mockInterval) {
-        clearInterval(mockInterval);
-        mockInterval = null;
-        btn.textContent = 'Start Mock GPS';
-        btn.classList.remove('active');
+    // Speed slider
+    const speedSlider = document.getElementById('debug-speed-slider');
+    const speedValEl = document.getElementById('debug-speed-val');
+    speedSlider.addEventListener('input', () => {
+      speedValEl.textContent = `${speedSlider.value} km/h`;
+    });
+
+    // Direction toggle
+    const dirBtn = document.getElementById('debug-dir-btn');
+    dirBtn.addEventListener('click', () => {
+      mockDirection *= -1;
+      if (mockDirection === 1) {
+        dirBtn.textContent = '→ Fwd';
+        dirBtn.classList.remove('reverse');
+      } else {
+        dirBtn.textContent = '← Rev';
+        dirBtn.classList.add('reverse');
+      }
+    });
+
+    // Route select change: clear cached GeoJSON and start position
+    document.getElementById('debug-route-select').addEventListener('change', () => {
+      mockStartKm = 0;
+      mockCachedGeoJSON = null;
+      if (startMarker) { startMarker.remove(); startMarker = null; }
+      document.getElementById('debug-start-km').textContent = '—';
+    });
+
+    // Map click: snap to selected route and set start position
+    map.on('click', (e) => {
+      const routeName = document.getElementById('debug-route-select').value;
+      const geojson = routeGeojsons[routeName];
+      if (!geojson) return; // routes not loaded yet
+
+      const feature = geojson.type === 'FeatureCollection' ? geojson.features[0] : geojson;
+      const line = turf.lineString(feature.geometry.coordinates);
+      const clickPt = turf.point([e.latlng.lng, e.latlng.lat]);
+      const snapped = turf.nearestPointOnLine(line, clickPt, { units: 'kilometers' });
+
+      // Compute distance along line explicitly (avoids relying on properties.location)
+      const lineStart = turf.point(feature.geometry.coordinates[0]);
+      const sliced = turf.lineSlice(lineStart, snapped, line);
+      mockStartKm = turf.length(sliced, { units: 'kilometers' });
+      mockCachedGeoJSON = geojson;
+
+      const snappedLatLng = [snapped.geometry.coordinates[1], snapped.geometry.coordinates[0]];
+      if (startMarker) startMarker.remove();
+      startMarker = L.circleMarker(snappedLatLng, {
+        radius: 8,
+        fillColor: '#00cc44',
+        color: '#fff',
+        weight: 2.5,
+        fillOpacity: 1
+      }).bindTooltip(`Start: ${mockStartKm.toFixed(2)} km`, { permanent: true, direction: 'top' }).addTo(map);
+
+      document.getElementById('debug-start-km').textContent = `${mockStartKm.toFixed(2)} km`;
+    });
+
+    // Start / Stop button
+    const startBtn = document.getElementById('debug-start-btn');
+    startBtn.addEventListener('click', () => {
+      if (mockSim) {
+        // Save current position so restart resumes from here
+        mockStartKm = mockSim.getDistKm();
+        document.getElementById('debug-start-km').textContent = `${mockStartKm.toFixed(2)} km`;
+        clearInterval(mockSim.id);
+        mockSim = null;
+        startBtn.textContent = '▶ Start';
+        startBtn.classList.remove('active');
         return;
       }
 
@@ -60,14 +153,34 @@
       const route = routes.find(r => r.name === routeName);
       if (!route) return;
 
-      fetch(route.file)
-        .then(r => r.json())
-        .then(geojson => {
-          mockInterval = startMockGPS(geojson, 25);
-          btn.textContent = 'Stop Mock GPS';
-          btn.classList.add('active');
-        });
+      const speed = parseInt(speedSlider.value, 10);
+      const startKm = mockStartKm;
+
+      const run = (geojson) => {
+        mockCachedGeoJSON = geojson;
+        mockSim = startMockGPS(geojson, speed, startKm, () => mockDirection);
+        startBtn.textContent = '■ Stop';
+        startBtn.classList.add('active');
+      };
+
+      if (mockCachedGeoJSON) {
+        run(mockCachedGeoJSON);
+      } else {
+        fetch(route.file).then(r => r.json()).then(run);
+      }
     });
+
+    // State inspector — polls app.js globals every 500 ms
+    setInterval(() => {
+      document.getElementById('ins-route').textContent = lockedRoute ?? '—';
+      document.getElementById('ins-dir').textContent =
+        travelDirection === 1 ? '→' : travelDirection === -1 ? '←' : '?';
+      document.getElementById('ins-idx').textContent = prevSnapIndex ?? '—';
+      document.getElementById('ins-pos').textContent = userLatLng
+        ? `${userLatLng[0].toFixed(5)}, ${userLatLng[1].toFixed(5)}`
+        : '—';
+      document.getElementById('ins-dest').textContent = selectedStop?.name ?? '—';
+    }, 500);
   </script>
 </body>
 </html>

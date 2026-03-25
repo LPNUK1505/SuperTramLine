@@ -1,5 +1,16 @@
 // Initialise map centred on Sheffield
-const map = L.map('map', { zoomControl: false }).setView([53.38, -1.47], 13);
+const MAP_BOUNDS_CENTRE = [53.3780, -1.4658]; // Fitzalan Square / Ponds Forge
+const MAP_BOUNDS_KM_NS = 15; // north-south radius
+const MAP_BOUNDS_KM_EW = 25; // east-west radius — wider to allow panning to Hathersage/Todwick
+const _bLat = MAP_BOUNDS_KM_NS / 111;
+const _bLng = MAP_BOUNDS_KM_EW / (111 * Math.cos(MAP_BOUNDS_CENTRE[0] * Math.PI / 180));
+const MAP_MAX_BOUNDS = [
+  [MAP_BOUNDS_CENTRE[0] - _bLat, MAP_BOUNDS_CENTRE[1] - _bLng],
+  [MAP_BOUNDS_CENTRE[0] + _bLat, MAP_BOUNDS_CENTRE[1] + _bLng],
+];
+
+const map = L.map('map', { zoomControl: false, maxBoundsViscosity: 1.0, minZoom: 11 }).setView([53.38, -1.47], 13);
+map.setMaxBounds(MAP_MAX_BOUNDS);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
