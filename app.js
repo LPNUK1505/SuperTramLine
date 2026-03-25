@@ -133,16 +133,29 @@ function onPositionUpdate(pos) {
   }
 }
 
-function onPositionError(err) {
-  console.error('GPS error:', err.message);
+function showGpsError(message) {
+  const el = document.getElementById('gps-error');
+  el.textContent = message;
+  el.style.display = 'block';
 }
 
-if ('geolocation' in navigator) {
+function onPositionError(err) {
+  const messages = {
+    1: 'GPS permission denied. Please allow location access.',
+    2: 'GPS position unavailable.',
+    3: 'GPS timed out.',
+  };
+  showGpsError(messages[err.code] || `GPS error: ${err.message}`);
+}
+
+if (!window.isSecureContext) {
+  showGpsError('GPS requires HTTPS. Location unavailable.');
+} else if ('geolocation' in navigator) {
   navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
     enableHighAccuracy: true,
     maximumAge: 5000,
     timeout: 10000
   });
 } else {
-  console.error('Geolocation not supported');
+  showGpsError('Geolocation not supported on this device.');
 }
