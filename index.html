@@ -11,6 +11,7 @@
   <div id="map"></div>
   <div id="gps-error"></div>
   <button id="locate-btn">&#x25CE; Locate Me</button>
+  <div id="top-bar">
     <div id="buttons">
       <button type="button" data-route="Blue">Blue Route</button>
       <button type="button" data-route="Yellow">Yellow Route</button>
@@ -18,7 +19,13 @@
       <button type="button" data-route="Tram Train">Tram Train</button>
       <a href="debug.html" id="debug-btn">Debug</a>
     </div>
+    <div id="search-container">
+      <input id="stop-search" type="search" placeholder="Search stops…" autocomplete="off">
+      <ul id="search-results"></ul>
+    </div>
+  </div>
 
+  <div id="travel-info"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
   <script src="app.js"></script>

@@ -2,6 +2,8 @@
 
 A mobile-friendly web app that shows your live GPS position on the Sheffield Supertram network. Tap a route to isolate it, then see your dot move along the line in real time.
 
+Ever sat on a Sheffield Supertram wondering how far along you are? Google Maps can tell you — if you punch in a destination, pick the right transport mode, and squint at the results. SuperTramLine skips all that. Open it up, type in your stop, and you instantly see your live position on the route and how far there is to go. No fuss.
+
 ## Features
 
 - All four Supertram routes displayed on a live map (Blue, Yellow, Purple, Tram Train)
