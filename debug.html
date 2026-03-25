@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SuperTramLine — Debug</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+  <div id="buttons">
+    <button type="button" data-route="Blue">Blue Route</button>
+    <button type="button" data-route="Yellow">Yellow Route</button>
+    <button type="button" data-route="Purple">Purple Route</button>
+    <button type="button" data-route="Tram Train">Tram Train</button>
+    <a href="index.html" id="exit-debug-btn">Exit Debug</a>
+  </div>
+  <div id="debug-panel">
+    <span id="debug-label">Debug Mode</span>
+    <select id="debug-route-select">
+      <option value="Blue">Blue Route</option>
+      <option value="Yellow">Yellow Route</option>
+      <option value="Purple">Purple Route</option>
+      <option value="Tram Train">Tram Train</option>
+    </select>
+    <button id="debug-start-btn">Start Mock GPS</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
+  <script src="app.js"></script>
+  <script src="debug/mock-gps.js"></script>
+  <script>
+    let mockInterval = null;
+
+    document.getElementById('debug-start-btn').addEventListener('click', () => {
+      const btn = document.getElementById('debug-start-btn');
+      if (mockInterval) {
+        clearInterval(mockInterval);
+        mockInterval = null;
+        btn.textContent = 'Start Mock GPS';
+        btn.classList.remove('active');
+        return;
+      }
+
+      const routeName = document.getElementById('debug-route-select').value;
+      const route = routes.find(r => r.name === routeName);
+      if (!route) return;
+
+      fetch(route.file)
+        .then(r => r.json())
+        .then(geojson => {
+          mockInterval = startMockGPS(geojson, 25);
+          btn.textContent = 'Stop Mock GPS';
+          btn.classList.add('active');
+        });
+    });
+  </script>
+</body>
+</html>
