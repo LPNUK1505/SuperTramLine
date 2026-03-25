@@ -1,0 +1,27 @@
+name: Update service worker version
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - sw.js  # prevent circular trigger when this action commits sw.js
+
+jobs:
+  update-sw:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inject commit SHA into sw.js
+        run: |
+          sed -i "s/const CACHE_NAME = .*/const CACHE_NAME = 'supertramline-${{ github.sha }}';/" sw.js
+
+      - name: Commit updated sw.js
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sw.js
+          git diff --staged --quiet || git commit -m "chore: update SW cache version [skip ci]"
+          git push
