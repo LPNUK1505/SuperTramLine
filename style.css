@@ -276,7 +276,36 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
   letter-spacing: 0.05em;
   font-size: 0.75rem;
   flex-shrink: 0;
-}#debug-route-select {
+}#debug-route-mobile {
+  flex: 1;
+  padding: 6px 8px;
+  min-height: 36px;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.2);
+  background: rgba(255,255,255,0.85);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: #333;
+}
+#debug-start-mobile {
+  padding: 6px 14px;
+  min-height: 36px;
+  background: #333;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  flex-shrink: 0;
+  transition: background 0.2s ease;
+}
+#debug-start-mobile.active {
+  background: #c0392b;
+}
+#debug-route-select {
   flex: 1;
   padding: 6px 8px;
   min-height: 36px;

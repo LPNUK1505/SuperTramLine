@@ -1,6 +1,9 @@
 const CACHE_NAME = 'supertramline-v1';
 
-// Activate immediately, don't wait for existing tabs to close
+// Activate immediately, don't wait for existing tabs to close.
+// Trade-off: a new version can activate mid-session. Acceptable here because
+// the app has no complex cached data structures that could break across versions —
+// the worst case is stale GeoJSON briefly served from cache, corrected on next load.
 self.addEventListener('install', () => self.skipWaiting());
 
 self.addEventListener('activate', event => {

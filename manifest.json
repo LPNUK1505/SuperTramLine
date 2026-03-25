@@ -1,0 +1,10 @@
+{
+  "name": "SuperTramLine",
+  "short_name": "TramLine",
+  "description": "Sheffield Supertram network map with live GPS tracking",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0057E7",
+  "icons": []
+}

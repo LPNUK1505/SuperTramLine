@@ -1,4 +1,4 @@
-// Initialise map centred on Sheffield
+// --- Map initialisation ---
 const MAP_BOUNDS_CENTRE = [53.3780, -1.4658]; // Fitzalan Square / Ponds Forge
 const MAP_BOUNDS_KM_NS = 15; // north-south radius
 const MAP_BOUNDS_KM_EW = 25; // east-west radius — wider to allow panning to Hathersage/Todwick
@@ -17,7 +17,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19
 }).addTo(map);
 
-// Route config
+// --- Route config ---
 const routes = [
   { file: 'routes/blue.geojson',      colour: '#0057E7', name: 'Blue',       ref: 'BLUE' },
   { file: 'routes/yellow.geojson',     colour: '#FFB800', name: 'Yellow',     ref: 'YELL' },
@@ -25,6 +25,7 @@ const routes = [
   { file: 'routes/tram-train.geojson', colour: '#3D3D3D', name: 'Tram Train', ref: 'TT'   },
 ];
 
+// --- State ---
 // Panes ensure all halos render beneath all route lines, regardless of async load order
 map.createPane('haloPane').style.zIndex  = 300;
 map.createPane('routePane').style.zIndex = 301;
@@ -40,10 +41,11 @@ let activeRoute = null;
 let userLatLng = null;
 let selectedStop = null;
 let lockedRoute = null;     // route name once user has clearly diverged onto one line
-let prevSnapIndex = null;   // previous segment index on the route, for direction detection
+let snapHistory = [];       // recent segment indices — used for stable direction detection
 let travelDirection = 0;    // 1 = forward along route coords, -1 = backward, 0 = unknown
+const DIRECTION_WINDOW = 3; // consecutive same-direction readings needed to commit
 const routeStopIndexCache = {}; // routeName → [{name, snapIndex}] sorted — built lazily
-const PESSIMISTIC_KMH = 18; // km/h — ~14% above timetabled speed of ~20.6 km/h
+const PESSIMISTIC_KMH = 18; // km/h — pessimistic (slower than average ~20.6 km/h) for conservative ETAs
 const NOT_ON_ROUTE_KM = 0.15;  // 150 m from line → "not on route"
 const LOCK_THRESHOLD_KM = 0.04; // 40 m gap between nearest and 2nd-nearest → lock
 
@@ -62,6 +64,7 @@ const hideAll = () => {
   });
 };
 
+// --- Route loading ---
 routes.forEach(route => {
   fetch(route.file)
     .then(r => r.json())
@@ -74,10 +77,14 @@ routes.forEach(route => {
         style: { color: route.colour, weight: 7, opacity: 1, pane: 'routePane', lineCap: 'round', lineJoin: 'round' }
       }).addTo(map);
     })
-    .catch(err => console.error(`Failed to load ${route.name}:`, err));
+    .catch(err => {
+      console.error(`Failed to load ${route.name}:`, err);
+      const btn = document.querySelector(`[data-route="${route.name}"]`);
+      if (btn) { btn.disabled = true; btn.title = 'Route data unavailable'; }
+    });
 });
 
-// Button toggle logic
+// --- Button toggle logic ---
 document.querySelectorAll('#buttons button').forEach(btn => {
   btn.addEventListener('click', () => {
     const name = btn.dataset.route;
@@ -95,7 +102,7 @@ document.querySelectorAll('#buttons button').forEach(btn => {
       stopLayers[name]?.addTo(map);
     }
     lockedRoute = null;
-    prevSnapIndex = null;
+    snapHistory = [];
     travelDirection = 0;
     updateTravelInfo();
   });
@@ -186,7 +193,7 @@ fetch('routes/stops.geojson')
         let bestDist = Infinity, bestRoutes = [];
         coordRouteMap.forEach(entry => {
           const dLat = entry.lat - el.lat;
-          const dLng = (entry.lng - el.lon) * 0.6; // cos(53°) correction
+          const dLng = (entry.lng - el.lon) * 0.6; // cos(53° N latitude) ≈ 0.6 — corrects lng scale for proximity
           const dist = dLat * dLat + dLng * dLng;
           if (dist < bestDist) { bestDist = dist; bestRoutes = entry.routes; }
         });
@@ -237,7 +244,7 @@ const allStops = [];
 
 const highlightMarker = L.circleMarker([0, 0], {
   radius: 12,
-  fillColor: '#FFD700',
+  fillColor: '#00BCD4', // cyan — distinct from all route colours (blue, yellow, purple, dark grey)
   color: '#222',
   weight: 2.5,
   fillOpacity: 0.95
@@ -321,6 +328,7 @@ const accuracyCircle = L.circle([0, 0], {
 });
 
 let firstFix = true;
+let watchId = null;
 
 function onPositionUpdate(pos) {
   const latlng = [pos.coords.latitude, pos.coords.longitude];
@@ -351,16 +359,30 @@ function onPositionError(err) {
     2: 'GPS position unavailable.',
     3: 'GPS timed out — try again outdoors.',
   };
+  watchId = null;
   document.getElementById('locate-btn').style.display = 'block';
   showGpsError(messages[err.code] || `GPS error: ${err.message}`);
 }
 
-document.getElementById('locate-btn').addEventListener('click', () => {
+const locateBtn = document.getElementById('locate-btn');
+locateBtn.addEventListener('click', () => {
+  if (watchId !== null) {
+    navigator.geolocation.clearWatch(watchId);
+    watchId = null;
+    userMarker.remove();
+    accuracyCircle.remove();
+    userLatLng = null;
+    firstFix = true;
+    locateBtn.textContent = '📍';
+    locateBtn.style.display = 'block';
+    updateTravelInfo();
+    return;
+  }
   if (!window.isSecureContext) {
     showGpsError('GPS requires HTTPS. Location unavailable.');
   } else if ('geolocation' in navigator) {
-    document.getElementById('locate-btn').style.display = 'none';
-    navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
+    locateBtn.style.display = 'none';
+    watchId = navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
       enableHighAccuracy: true,
       maximumAge: 5000,
       timeout: 10000
@@ -456,12 +478,20 @@ function updateTravelInfo() {
     }
   }
 
-  // Direction tracking: compare current segment index to previous
+  // Direction tracking: require DIRECTION_WINDOW consecutive same-direction readings
+  // before committing, to avoid jitter at junctions or when stationary.
   const currentIndex = chosen.snapped.properties.index;
-  if (prevSnapIndex !== null && currentIndex !== prevSnapIndex) {
-    travelDirection = currentIndex > prevSnapIndex ? 1 : -1;
+  snapHistory.push(currentIndex);
+  if (snapHistory.length > DIRECTION_WINDOW + 1) snapHistory.shift();
+  if (snapHistory.length >= 2) {
+    const deltas = [];
+    for (let i = 1; i < snapHistory.length; i++) {
+      if (snapHistory[i] !== snapHistory[i - 1]) deltas.push(snapHistory[i] > snapHistory[i - 1] ? 1 : -1);
+    }
+    if (deltas.length >= DIRECTION_WINDOW - 1 && deltas.every(d => d === deltas[0])) {
+      travelDirection = deltas[0];
+    }
   }
-  prevSnapIndex = currentIndex;
 
   // Find next stop in direction of travel
   let nextStopName = null;
@@ -483,10 +513,19 @@ function updateTravelInfo() {
   }
 
   el.innerHTML = '';
-  const dot = document.createElement('span');
-  dot.className = 'route-dot';
-  dot.style.background = chosen.route.colour;
-  el.appendChild(dot);
+  // If no route is locked and multiple lines are within threshold, show all their dots
+  // to avoid implying a single route when the user is on shared track.
+  const ambiguous = !lockedRoute && snaps.length > 1 &&
+    (snaps[1].dist - snaps[0].dist) < LOCK_THRESHOLD_KM;
+  const dotsToShow = ambiguous
+    ? snaps.filter(s => (s.dist - snaps[0].dist) < LOCK_THRESHOLD_KM).map(s => s.route)
+    : [chosen.route];
+  dotsToShow.forEach(r => {
+    const dot = document.createElement('span');
+    dot.className = 'route-dot';
+    dot.style.background = r.colour;
+    el.appendChild(dot);
+  });
 
   const parts = [];
   if (chosen.dist > NOT_ON_ROUTE_KM) {
