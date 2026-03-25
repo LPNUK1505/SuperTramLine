@@ -148,14 +148,17 @@ function onPositionError(err) {
   showGpsError(messages[err.code] || `GPS error: ${err.message}`);
 }
 
-if (!window.isSecureContext) {
-  showGpsError('GPS requires HTTPS. Location unavailable.');
-} else if ('geolocation' in navigator) {
-  navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
-    enableHighAccuracy: true,
-    maximumAge: 5000,
-    timeout: 10000
-  });
-} else {
-  showGpsError('Geolocation not supported on this device.');
-}
+document.getElementById('locate-btn').addEventListener('click', () => {
+  if (!window.isSecureContext) {
+    showGpsError('GPS requires HTTPS. Location unavailable.');
+  } else if ('geolocation' in navigator) {
+    document.getElementById('locate-btn').style.display = 'none';
+    navigator.geolocation.watchPosition(onPositionUpdate, onPositionError, {
+      enableHighAccuracy: true,
+      maximumAge: 5000,
+      timeout: 10000
+    });
+  } else {
+    showGpsError('Geolocation not supported on this device.');
+  }
+});
